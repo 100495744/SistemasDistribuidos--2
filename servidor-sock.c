@@ -5,6 +5,7 @@
 #include <string.h>
 #include <sys/ipc.h>
 #include <sys/msg.h>
+#include <sys/socket.h>
 #include <mqueue.h>
 #include <pthread.h>
 #include <dirent.h>
@@ -26,7 +27,6 @@ typedef struct {
     int N_value2;
     double V_value2[32];
     struct Coord value3;
-    char q_name[256]; //Nombre de la cola de mensajes
 }peticion;
 
 typedef struct {
@@ -64,19 +64,73 @@ void inicializar_attr() {
     attr_respuesta.mq_msgsize = sizeof(respuesta); // Tamaño de los mensajes de respuestas
 }
 
-void tratar_peticion(peticion  *petici){
+peticion coger_datos_peticion(int *sc){
+    //coger los datos de la petición
+    err = recvMessage ( sc, (int *) &pet->op, sizeof(int));   // recibe la operació
+    if (err == -1) {
+        printf("Error en recepcion de op\n");
+        close(sc);
+        continue;
+    }
+    pet.op = ntohl(pet.op);
+
+    err = recvMessage ( sc, (int *) &pet->key, sizeof(int));   // recibe la operació
+    if (err == -1) {
+        printf("Error en recepcion de value\n");
+        close(sc);
+        continue;
+    }
+    pet.key = ntohl(pet.key);
+    err = recvMessage ( sc, (char *) &pet->value1, sizeof(pet->value1));   // recibe la operació
+    if (err == -1) {
+        printf("Error en recepcion de value\n");
+        close(sc);
+        continue;
+    }
+    err = recvMessage ( sc, (int *) &pet->N_value2, sizeof(int));   // recibe la operació
+    if (err == -1) {
+        printf("Error en recepcion de value\n");
+        close(sc);
+        continue;
+    }
+    pet.N_value2 = ntohl(pet.Nvalue2);
+
+    for ( i = 0; i < pet->N:value2 , i++){
+        err = recvMessage ( sc, (double *) &pet->V_value2[i], sizeof(double));   // recibe la operació
+        if (err == -1) {
+            printf("Error en recepcion de value\n");
+            close(sc);
+            continue;
+        }
+        pet.V_value2[i] = ntohl(pet.V_value2[i]);
+    }
+
+
+    err = recvMessage ( sc, (coord *) &pet->value3, sizeof(struct Coord));   // recibe la operació
+    if (err == -1) {
+        printf("Error en recepcion de value\n");
+        close(sc);
+        continue;
+    }
+
+    return pet;
+}
+
+void tratar_peticion(int  *soquet_cliente){
     //asegurarnos que se crea el hilo
     pthread_mutex_lock(&mutex);
     printf("hilo creado\n");
-    peticion pet = *petici;
+    int sd = *soquet_cliente;
     creado = 1;
     pthread_cond_signal(&hecho);
     pthread_mutex_unlock(&mutex);
 
     respuesta respuesta;
-    peticion peticion; 
+    peticion pet;
     int prio = 0;
     inicializar_attr();
+
+    pet = coger_datos_peticion(&sd)
 
     switch(pet.op){
 
@@ -191,16 +245,54 @@ void tratar_peticion(peticion  *petici){
     }
     mq_close(qr);
     pthread_mutex_unlock(&mutex);
+
+    err = sendMessage(sc, (char *)&res, sizeof(int32_t));  // envía el resultado
+    if (err == -1) {
+        printf("Error en envi­o\n");
+        close(sc);
+        continue;
+    }
+
+    close(sc);
 }
 
 
-int main(){
-    //Preparación de la base de datos
+int main(int argc , char **argv){
+    //Argumentos validos
+    if (argc < 2 ){
+        printf("Número de argumentos invalido");
+        return -1;
+    }
 
+    //Preparación de la base de datos
     DIR *Dir;
     Dir = opendir(DirName);
     if ( Dir == NULL){
         mkdir("DataBase",S_IRWXU | S_IRWXG | S_IROTH | S_IXOTH);
+    }
+    //codigo de soquets
+    struct sockaddr_in server_addr,  client_addr;
+    socklen_t size;
+    int sd;
+    int socket_number = atoi(argv[1])
+
+    if ((sd =  socket(AF_INET, SOCK_STREAM, 0))<0){
+        printf ("SERVER: Error en el socket");
+        return (0);
+    }
+
+    bzero((char *)&server_addr, sizeof(server_addr));
+    server_addr.sin_family      = AF_INET;
+    server_addr.sin_addr.s_addr = INADDR_ANY;
+    server_addr.sin_port        = htons(socket_number);
+    val = 1;
+    setsockopt(sd, SOL_SOCKET, SO_REUSEADDR, (char *) &val, sizeof(int));
+    //binding
+    err = bind(sd, (const struct sockaddr *)&server_addr,
+               sizeof(server_addr));
+    if (err == -1) {
+        printf("Error en bind\n");
+        return -1;
     }
 
     respuesta respuesta;
@@ -209,9 +301,6 @@ int main(){
     mq_unlink("/SERVIDOR");
     pthread_attr_t attr;
     pthread_t thr;
-
-    int list_keys[NUM_THREADS];
-
     
     inicializar_attr();
     pthread_attr_init(&attr);
@@ -220,15 +309,19 @@ int main(){
 
     pthread_mutex_init(&mutex, NULL);
     pthread_cond_init(&hecho, NULL);
-    
-    int qs = mq_open("/SERVIDOR", O_CREAT | O_RDONLY, 0700, &attr_peticion);
-    if (qs == -1){
-        perror("Error al abrir la cola de mensajes");
-        return -1;
-    };
+
 
     printf("############## SERVIDOR CONECTADO ##############\n");
     printf("Esperando peticiones...\n");
+
+    //server start listening
+    err = listen(sd, SOMAXCONN);
+    if (err == -1) {
+        printf("Error en listen\n");
+        return -1;
+    }
+
+    size = sizeof(client_addr);
     while (1){
         //we check that the Database has not been deleted while the server is running
         Dir = opendir(DirName);
@@ -236,10 +329,18 @@ int main(){
             mkdir("DataBase",S_IRWXU | S_IRWXG | S_IROTH | S_IXOTH);
         }
 
-        memset(&peticion, 0, sizeof(peticion));
-        mq_receive(qs, (char *)&peticion, sizeof(peticion), &prio);
+        //accept conexión de un cliente
+        printf("esperando conexion\n");
+        sc = accept(sd, (struct sockaddr *)&client_addr, (socklen_t *)&size);
+
+        if (sc == -1) {
+            printf("Error en accept\n");
+            return -1;
+        }
+
+
         //creación del hilo
-        if(pthread_create(&thr, &attr, (void *) tratar_peticion, &peticion) == -1){
+        if(pthread_create(&thr, &attr, (void *) tratar_peticion, &sc) == -1){
             perror("Error al crear hilo");
             return -1;
         }
