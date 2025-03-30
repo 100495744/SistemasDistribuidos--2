@@ -6,17 +6,20 @@
 #include <sys/ipc.h>
 #include <sys/msg.h>
 #include <sys/socket.h>
+#include <arpa/inet.h>
+#include <netinet/in.h>
 #include <mqueue.h>
 #include <pthread.h>
 #include <dirent.h>
 #include <errno.h>
 #include "claves.h"
-#include "claves.c"
+#include "lines.h"
 
 pthread_mutex_t mutex;
 pthread_cond_t hecho;
 int creado = 0;
 #define NUM_THREADS 10
+#define DirName "DataBase"
 
 
 
@@ -64,56 +67,134 @@ void inicializar_attr() {
     attr_respuesta.mq_msgsize = sizeof(respuesta); // Tamaño de los mensajes de respuestas
 }
 
-peticion coger_datos_peticion(int *sc){
+int coger_datos_peticion(int sc, peticion *pet ){
     //coger los datos de la petición
-    err = recvMessage ( sc, (int *) &pet->op, sizeof(int));   // recibe la operació
+
+
+    int err = recvMessage ( sc, (char *) &pet->op, sizeof(int));   // recibe la operació
     if (err == -1) {
         printf("Error en recepcion de op\n");
         close(sc);
-        continue;
+        return -1;
     }
-    pet.op = ntohl(pet.op);
+    pet->op = ntohl(pet->op);
 
-    err = recvMessage ( sc, (int *) &pet->key, sizeof(int));   // recibe la operació
+    err = recvMessage( sc, (char *) &pet->key, sizeof(int));   // recibe la operació
     if (err == -1) {
         printf("Error en recepcion de value\n");
         close(sc);
-        continue;
+        return -1;
     }
-    pet.key = ntohl(pet.key);
+    pet->key = ntohl(pet->key);
+
     err = recvMessage ( sc, (char *) &pet->value1, sizeof(pet->value1));   // recibe la operació
     if (err == -1) {
         printf("Error en recepcion de value\n");
         close(sc);
-        continue;
+        return -1;
     }
-    err = recvMessage ( sc, (int *) &pet->N_value2, sizeof(int));   // recibe la operació
+
+
+    err = recvMessage ( sc, (char *) &pet->N_value2, sizeof(int));   // recibe la operació
     if (err == -1) {
         printf("Error en recepcion de value\n");
         close(sc);
-        continue;
+        return -1;
     }
-    pet.N_value2 = ntohl(pet.Nvalue2);
+    pet->N_value2 = ntohl(pet->N_value2);
 
-    for ( i = 0; i < pet->N:value2 , i++){
-        err = recvMessage ( sc, (double *) &pet->V_value2[i], sizeof(double));   // recibe la operació
+    for ( int i = 0; i < pet->N_value2 ; i++){
+        err = recvMessage ( sc, (char *)&pet->V_value2[i], sizeof(double));   // recibe la operació
         if (err == -1) {
             printf("Error en recepcion de value\n");
             close(sc);
-            continue;
+            return -1;
         }
-        pet.V_value2[i] = ntohl(pet.V_value2[i]);
+        pet->V_value2[i] = ntohl(pet->V_value2[i]);
     }
 
 
-    err = recvMessage ( sc, (coord *) &pet->value3, sizeof(struct Coord));   // recibe la operació
+    err = recvMessage ( sc, (char *) &pet->value3.x, sizeof(int));   // recibe la operació
     if (err == -1) {
         printf("Error en recepcion de value\n");
         close(sc);
-        continue;
+        return -1;
+    }
+    pet->value3.x = ntohl(pet->value3.x);
+
+    err = recvMessage ( sc, (char *) &pet->value3.y, sizeof(int));   // recibe la operació
+    if (err == -1) {
+        printf("Error en recepcion de value\n");
+        close(sc);
+        return -1;
+    }
+    pet->value3.y = ntohl(pet->value3.y);
+
+    return 0;
+}
+
+//Mandar la respuesta al cliente
+int mandar_respuesta(respuesta *res ,int sc ){
+    int key = htonl(res->key);
+    int N_value2= htonl(res->N_value2);
+    double V_value2[32];
+    for (int i = 0; i < N_value2; i++) {
+        V_value2[i] = htonl(res->V_value2[i]);
+    }
+    int value3x = htonl(res->value3.x);
+    int value3y = htonl(res->value3.y);
+    int status = htonl(res->status);
+
+    int err;
+
+    err = sendMessage(sc, (char *)&key, sizeof(int));  // envía el resultado
+    if (err == -1) {
+        printf("Error en envio\n");
+        close(sc);
+        return -1;
     }
 
-    return pet;
+    err = sendMessage(sc, (char *)&res->value1, sizeof(res->value1));  // envía el resultado
+    if (err == -1) {
+        printf("Error en envio\n");
+        close(sc);
+        return -1;
+    }
+
+    err = sendMessage(sc, (char *)&N_value2, sizeof(int));  // envía el resultado
+    if (err == -1) {
+        printf("Error en envio\n");
+        close(sc);
+        return -1;
+    }
+
+    for( int i =0; i < N_value2; i++){
+    err = sendMessage(sc, (char *)&V_value2[i], sizeof(double));  // envía el resultado
+    if (err == -1) {
+        printf("Error en envio\n");
+        close(sc);
+        return -1;
+        }
+    }
+    err = sendMessage(sc, (char *)&value3x, sizeof(int));  // envía el resultado
+    if (err == -1) {
+        printf("Error en envio\n");
+        close(sc);
+        return -1;
+    }
+    err = sendMessage(sc, (char *)&value3y, sizeof(int));  // envía el resultado
+    if (err == -1) {
+        printf("Error en envio\n");
+        close(sc);
+        return -1;
+    }
+    err = sendMessage(sc, (char *)&status, sizeof(int));  // envía el resultado
+    if (err == -1) {
+        printf("Error en envio\n");
+        close(sc);
+        return -1;
+    }
+    return 0;
 }
 
 void tratar_peticion(int  *soquet_cliente){
@@ -127,10 +208,15 @@ void tratar_peticion(int  *soquet_cliente){
 
     respuesta respuesta;
     peticion pet;
+
     int prio = 0;
     inicializar_attr();
 
-    pet = coger_datos_peticion(&sd)
+    if ( coger_datos_peticion(sd, (peticion *) &pet) == -1){
+        printf("error coger datos");
+        exit(-1);
+    }
+
 
     switch(pet.op){
 
@@ -233,28 +319,13 @@ void tratar_peticion(int  *soquet_cliente){
             break;
     }
 
-    pthread_mutex_lock(&mutex);
-    int qr = mq_open(pet.q_name, O_CREAT | O_WRONLY, 0700, &attr_respuesta);
-    if (qr == -1) {
-        perror("Error en mq_open del servidor");
-        return -1;
-    }
-    if (mq_send(qr, (char *)&respuesta, sizeof(respuesta), 0) == -1) {
-        perror("Error en mq_send del servidor");
-        return -1;
-    }
-    mq_close(qr);
-    pthread_mutex_unlock(&mutex);
-
-    err = sendMessage(sc, (char *)&res, sizeof(int32_t));  // envía el resultado
-    if (err == -1) {
-        printf("Error en envi­o\n");
-        close(sc);
-        continue;
-    }
-
-    close(sc);
+   if ( mandar_respuesta( &respuesta , sd ) == -1) {
+        printf("Error mandar respuesta\n");
+       exit(-1);
+   }
+   close(sd);
 }
+
 
 
 int main(int argc , char **argv){
@@ -270,25 +341,28 @@ int main(int argc , char **argv){
     if ( Dir == NULL){
         mkdir("DataBase",S_IRWXU | S_IRWXG | S_IROTH | S_IXOTH);
     }
+
     //codigo de soquets
     struct sockaddr_in server_addr,  client_addr;
     socklen_t size;
     int sd;
-    int socket_number = atoi(argv[1])
+    int socket_number = atoi(argv[1]);
+
 
     if ((sd =  socket(AF_INET, SOCK_STREAM, 0))<0){
         printf ("SERVER: Error en el socket");
         return (0);
     }
+    int val = 1;
 
     bzero((char *)&server_addr, sizeof(server_addr));
     server_addr.sin_family      = AF_INET;
     server_addr.sin_addr.s_addr = INADDR_ANY;
     server_addr.sin_port        = htons(socket_number);
-    val = 1;
+
     setsockopt(sd, SOL_SOCKET, SO_REUSEADDR, (char *) &val, sizeof(int));
     //binding
-    err = bind(sd, (const struct sockaddr *)&server_addr,
+    int err = bind(sd, (const struct sockaddr *)&server_addr,
                sizeof(server_addr));
     if (err == -1) {
         printf("Error en bind\n");
@@ -331,13 +405,12 @@ int main(int argc , char **argv){
 
         //accept conexión de un cliente
         printf("esperando conexion\n");
-        sc = accept(sd, (struct sockaddr *)&client_addr, (socklen_t *)&size);
+        int sc = accept(sd, (struct sockaddr *)&client_addr, (socklen_t *)&size);
 
         if (sc == -1) {
             printf("Error en accept\n");
             return -1;
         }
-
 
         //creación del hilo
         if(pthread_create(&thr, &attr, (void *) tratar_peticion, &sc) == -1){
@@ -352,8 +425,7 @@ int main(int argc , char **argv){
         pthread_mutex_unlock(&mutex);
     };
 
-    mq_close(qs);
-    mq_unlink("/SERVIDOR");
-    return 0;
+   close(sd);
+   return 0;
 }
 

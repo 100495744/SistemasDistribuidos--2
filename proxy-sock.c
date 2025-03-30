@@ -1,8 +1,15 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <strings.h>
 #include <mqueue.h>
+#include <dirent.h>
+#include <errno.h>
+#include <netdb.h>
+#include <sys/socket.h>
+#include <arpa/inet.h>
 #include "claves.h"
+#include "lines.h"
 
 typedef struct {
     int op; // Operación a realizar
@@ -11,7 +18,6 @@ typedef struct {
     int N_value2;
     double V_value2[32];
     struct Coord value3;
-    char q_name[256]; // Nombre de la cola de mensajes
 } peticion;
 
 typedef struct {
@@ -32,59 +38,202 @@ typedef enum {
     OP_DELETE
 } Operacion;
 
-struct mq_attr attr_peticion;
-struct mq_attr attr_respuesta;
+int make_conection(){
+    char *IP_SERVER = getenv("IP_TUPLAS");
+    if (IP_SERVER == NULL){
+        printf("Variable IP_TUPLAS no definida\n");
+        return 0;
+    }
+    char *PORT_SERVER = getenv("PORT_TUPLAS");
+    if (PORT_SERVER == NULL){
+        printf("Variable PORT_TUPLAS no definida\n");
+        return 0;
+    }
+    short puerto = (short) atoi(PORT_SERVER);;
+    int sd;
+    struct sockaddr_in server_addr;
+    struct hostent *hp;
 
-void inicializar_attr() {
-    //cola de peticiones
-    attr_peticion.mq_flags = 0;                
-    attr_peticion.mq_maxmsg = 10;              // Máximo número de mensajes en la cola
-    attr_peticion.mq_msgsize = sizeof(peticion); // Tamaño de los mensajes de peticiones
-
-    //cola de respuestas
-    attr_respuesta.mq_flags = 0;               
-    attr_respuesta.mq_maxmsg = 10;             // Máximo número de mensajes en la cola
-    attr_respuesta.mq_msgsize = sizeof(respuesta); // Tamaño de los mensajes de respuestas
-}
-
-int abrir_colas(mqd_t *qs, mqd_t *qr, char *qr_name) {
-    inicializar_attr();
-    
-    // Generar nombre de cola de respuesta único
-    sprintf(qr_name, "%s%d", "/CLIENTE_", getpid());
-    
-    // Abrir cola de servidor 
-    *qs = mq_open("/SERVIDOR", O_CREAT | O_WRONLY, 0700, &attr_peticion);
-    if (*qs == -1) {
-        perror("Error al abrir la cola de mensajes (servidor)");
+    sd = socket(AF_INET, SOCK_STREAM, 0);
+    if (sd == 1) {
+        printf("Error en socket\n");
         return -1;
     }
-    
-    // Abrir cola de respuesta
-    *qr = mq_open(qr_name, O_CREAT | O_RDONLY, 0700, &attr_respuesta);
-    if (*qr == -1) {
-        perror("Error al abrir la cola de mensajes (cliente)");
-        mq_close(*qs);
+
+
+    bzero((char *)&server_addr, sizeof(server_addr));
+    hp = gethostbyname(IP_SERVER);
+    if (hp == NULL) {
+        printf("Error en gethostbyname\n");
         return -1;
     }
-    
-    return 0;
+
+    memcpy (&(server_addr.sin_addr), hp->h_addr, hp->h_length);
+    server_addr.sin_family  = AF_INET;
+    server_addr.sin_port    = htons(puerto);
+
+    int err = connect(sd, (struct sockaddr *) &server_addr,  sizeof(server_addr));
+    if (err == -1) {
+        printf("Error en connect\n");
+        return -1;
+    }
+
+    return sd;
 }
 
-// Función de limpieza de colas
-void limpiar_colas(mqd_t qs, mqd_t qr, char *qr_name) {
 
-    if (mq_close(qs) == -1) {
-        perror("Error al cerrar la cola del servidor");
+int enviar_peticion( int sc , peticion *pet){
+    if (sc == 0 ){
+        printf("Error in connection");
     }
 
-    if (mq_close(qr) == -1) {
-        perror("Error al cerrar la cola del cliente");
+    int op  = htonl(pet->op); // Operación a realizar
+    int key = htonl(pet->key);
+    char value1[256];
+
+    strcpy_s(value1, 256, pet->value1);
+    int N_value2 = htonl(pet->N_value2);
+    double V_value2[32];
+    for ( int i = 0; i < N_value2; i++){
+        V_value2[i] = htonl(pet->V_value2[i]);
+    }
+    int V_value3_x = htonl(pet->value3.x);
+    int V_value3_y = htonl(pet->value3.y);
+
+
+
+    int err = sendMessage( sc, (char *) &op, sizeof(int));   // recibe la operació
+    if (err == -1) {
+        printf("Error en recepcion de op\n");
+        close(sc);
+        return -1;
     }
 
-    if (mq_unlink(qr_name) == -1) {
-        perror("Error al desvincular la cola del cliente");
+
+    err = sendMessage( sc, (char *) &key, sizeof(int));   // recibe la operació
+    if (err == -1) {
+        printf("Error en recepcion de value\n");
+        close(sc);
+        return -1;
     }
+
+
+    err = sendMessage ( sc, (char *) value1, sizeof(pet->value1));   // recibe la operació
+    if (err == -1) {
+        printf("Error en recepcion de value\n");
+        close(sc);
+        return -1;
+    }
+
+    err = sendMessage ( sc, (char *) &N_value2, sizeof(int));   // recibe la operació
+    if (err == -1) {
+        printf("Error en recepcion de value\n");
+        close(sc);
+        return -1;
+    }
+
+
+    for ( int i = 0; i < pet->N_value2 ; i++){
+        err = sendMessage ( sc, (char *)&V_value2[i], sizeof(double));   // recibe la operació
+        if (err == -1) {
+            printf("Error en recepcion de value\n");
+            close(sc);
+            return -1;
+        }
+
+    }
+
+
+    err = sendMessage ( sc, (char *) &V_value3_x, sizeof(int));   // recibe la operació
+    if (err == -1) {
+        printf("Error en recepcion de value\n");
+        close(sc);
+        return -1;
+    }
+
+
+    err = sendMessage ( sc, (char *) &V_value3_y, sizeof(int));   // recibe la operació
+    if (err == -1) {
+        printf("Error en recepcion de value\n");
+        close(sc);
+        return -1;
+    }
+
+    return 1;
+
+
+}
+
+
+int recivir_respuesta(int sc , respuesta *resp){
+    int key;
+    char value1[256];
+    int N_value2;
+    double V_value2;
+    int value3;
+    int status; // Éxito o fracaso
+
+    int err = recvMessage(sc, (char *)&key, sizeof(int));  // envía el resultado
+    if (err == -1) {
+        printf("Error en envio\n");
+        close(sc);
+        return -1;
+    }
+    resp->key = nhotl(key);
+
+    err = recvMessage(sc, (char *)&value1, sizeof(value1));  // envía el resultado
+    if (err == -1) {
+        printf("Error en envio\n");
+        close(sc);
+        return -1;
+    }
+    strcpy_s(resp->value1,256, value1);
+
+    err = recvMessage(sc, (char *)&N_value2, sizeof(int));  // envía el resultado
+    if (err == -1) {
+        printf("Error en envio\n");
+        close(sc);
+        return -1;
+    }
+    resp->N_value2 = nhotl(N_value2);
+
+    for ( int i = 0; i < resp->N_value2 ; i++){
+    err = recvMessage(sc, (char *)&V_value2, sizeof(double));  // envía el resultado
+    if (err == -1) {
+        printf("Error en envio\n");
+        close(sc);
+        return -1;
+    }
+    resp->V_value2[i] = nhotl(V_value2);
+    }
+
+
+    err = recvMessage(sc, (char *)&value3, sizeof(int));  // envía el resultado
+    if (err == -1) {
+        printf("Error en envio\n");
+        close(sc);
+        return -1;
+    }
+    resp->value3.x = nhotl(value3);
+
+    err = recvMessage(sc, (char *)&value3, sizeof(int));  // envía el resultado
+    if (err == -1) {
+        printf("Error en envio\n");
+        close(sc);
+        return -1;
+        }
+    resp->value3.y = nhotl(value3);
+
+
+    err = recvMessage(sc, (char *)&status, sizeof(int));  // envía el resultado
+    if (err == -1) {
+        printf("Error en envio\n");
+        close(sc);
+        return -1;
+    }
+    resp->status = nhtol(status);
+
+
 }
 
 int destroy() {
@@ -92,20 +241,21 @@ int destroy() {
     peticion peticion;
     respuesta respuesta;
     char qr_name[1024];
-    int prio;
-    mqd_t qs, qr;
 
-    if (abrir_colas(&qs, &qr, qr_name) == -1) {
-        return -1;
-    }
+    int sc = make_conection();
 
     peticion.op = OP_DESTROY;
-    strcpy(peticion.q_name, qr_name);
 
-    mq_send(qs, (char *)&peticion, sizeof(peticion), 0);
-    mq_receive(qr, (char *)&respuesta, sizeof(respuesta), &prio);
-    
-    limpiar_colas(qs, qr, qr_name);
+    if (enviar_peticion(sc , &peticion)){
+        close(sc);
+        exit(-1);
+    }
+    if ( recivir_respuesta(sc, &respuesta)){
+        close(sc);
+        exit(-1);
+    }
+
+    close(sc);
 
     return respuesta.status;
 }
@@ -115,29 +265,19 @@ int set_value(int key, char *value1, int N_value2, double *V_value2, struct Coor
     peticion peticion;
     respuesta respuesta;
     char qr_name[1024];
-    int prio;
-    mqd_t qs, qr;
 
-    if (abrir_colas(&qs, &qr, qr_name) == -1) {
-        return -1;
-    }
-    
     peticion.op = OP_SET;
     peticion.key = key;
     strcpy(peticion.value1, value1);
     peticion.N_value2 = N_value2;
     memcpy(peticion.V_value2, V_value2, sizeof(double) * N_value2);
     peticion.value3 = value3;
-    strcpy(peticion.q_name, qr_name);
 
-    mq_send(qs, (char *)&peticion, sizeof(peticion), 0);
-    ssize_t bytes_read = mq_receive(qr, (char *)&respuesta, sizeof(respuesta), 0);
-    if (bytes_read == -1) {
-        perror("Error en mq_receive");
-        return -1;
-    }
+    int sc = make_conection();
+    enviar_peticion(sc , &peticion);
+    recivir_respuesta(sc, &respuesta);
 
-    limpiar_colas(qs, qr, qr_name);
+    close(sc);
 
     return respuesta.status;
 }
@@ -147,38 +287,22 @@ int get_value(int key, char *value1, int *N_value2, double *V_value2, struct Coo
     peticion peticion;
     respuesta respuesta;
     char qr_name[1024];
-    int prio;
-    mqd_t qs, qr;
-
-    if (abrir_colas(&qs, &qr, qr_name) == -1) {
-        return -1;
-    }
 
     peticion.op = OP_GET;
     peticion.key = key;
-    strcpy(peticion.q_name, qr_name);
-    mq_send(qs, (char *)&peticion, sizeof(peticion), 0);
-    ssize_t bytes_read = mq_receive(qr, (char *)&respuesta, sizeof(respuesta), 0);
-    if (bytes_read == -1) {
-        perror("Error en mq_receive");
-        return -1;
-    }
+
+    int sc = make_conection();
+    enviar_peticion(sc , &peticion);
+    recivir_respuesta(sc, &respuesta);
+
+    close(sc);
+
     if (respuesta.status == 0){
         strcpy(value1, respuesta.value1);
         *N_value2 = respuesta.N_value2;
         memcpy(V_value2, respuesta.V_value2, sizeof(double) * (*N_value2));
         *value3 = respuesta.value3;
     }
-
-    //DEBUG -> ELIMINAR
-    /*printf("Soy el proxy y respuesta.value1 = %s\n", respuesta.value1);
-    printf("Soy el proxy y respuesta.N_value2 = %d\n", respuesta.N_value2);
-        for (int i = 0; i < respuesta.N_value2; i++){
-            printf("Soy el proxy y respuesta.V_value2[%d] = %f\n", i, respuesta.V_value2[i]);
-        }
-    printf("Soy el proxy yrespuesta.value3 = (%d, %d)\n", respuesta.value3.x, respuesta.value3.y);*/
-
-    limpiar_colas(qs, qr, qr_name);
 
     return respuesta.status;
 }
@@ -187,13 +311,8 @@ int modify_value(int key, char *value1, int N_value2, double *V_value2, struct C
     printf("Mensaje del proxy: Enviando una petición modify_value\n");
     peticion peticion;
     respuesta respuesta;
-    char qr_name[1024];
-    int prio;
-    mqd_t qs, qr;
 
-    if (abrir_colas(&qs, &qr, qr_name) == -1) {
-        return -1;
-    }
+
 
     peticion.op = OP_MODIFY;
     peticion.key = key;
@@ -201,12 +320,13 @@ int modify_value(int key, char *value1, int N_value2, double *V_value2, struct C
     peticion.N_value2 = N_value2;
     memcpy(peticion.V_value2, V_value2, sizeof(double) * N_value2);
     peticion.value3 = value3;
-    strcpy(peticion.q_name, qr_name);
 
-    mq_send(qs, (char *)&peticion, sizeof(peticion), 0);
-    mq_receive(qr, (char *)&respuesta, sizeof(respuesta), &prio);
-    
-    limpiar_colas(qs, qr, qr_name);
+
+    int sc = make_conection();
+    enviar_peticion(sc , &peticion);
+    recivir_respuesta(sc, &respuesta);
+
+    close(sc);
 
     return respuesta.status;
 }
@@ -215,22 +335,18 @@ int delete_key(int key) {
     printf("Mensaje del proxy: Enviando una petición delete_key\n");
     peticion peticion;
     respuesta respuesta;
-    char qr_name[1024];
-    int prio;
-    mqd_t qs, qr;
 
-    if (abrir_colas(&qs, &qr, qr_name) == -1) {
-        return -1;
-    }
+
 
     peticion.op = OP_DELETE;
     peticion.key = key;
-    strcpy(peticion.q_name, qr_name);
 
-    mq_send(qs, (char *)&peticion, sizeof(peticion), 0);
-    mq_receive(qr, (char *)&respuesta, sizeof(respuesta), &prio);
-    
-    limpiar_colas(qs, qr, qr_name);
+
+    int sc = make_conection();
+    enviar_peticion(sc , &peticion);
+    recivir_respuesta(sc, &respuesta);
+
+    close(sc);
 
     return respuesta.status;
 }
@@ -239,22 +355,16 @@ int exist(int key) {
     printf("Mensaje del proxy: Enviando una petición exist\n");
     peticion peticion;
     respuesta respuesta;
-    char qr_name[1024];
-    int prio;
-    mqd_t qs, qr;
 
-    if (abrir_colas(&qs, &qr, qr_name) == -1) {
-        return -1;
-    }
 
     peticion.op = OP_EXIST;
     peticion.key = key;
-    strcpy(peticion.q_name, qr_name);
 
-    mq_send(qs, (char *)&peticion, sizeof(peticion), 0);
-    mq_receive(qr, (char *)&respuesta, sizeof(respuesta), &prio);
-    
-    limpiar_colas(qs, qr, qr_name);
+    int sc = make_conection();
+    enviar_peticion(sc , &peticion);
+    recivir_respuesta(sc, &respuesta);
+
+    close(sc);
 
     return respuesta.status;
 }
