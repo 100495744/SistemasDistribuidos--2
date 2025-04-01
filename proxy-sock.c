@@ -5,13 +5,14 @@
 #include <mqueue.h>
 #include <dirent.h>
 #include <errno.h>
+#include <netinet/in.h>
 #include <netdb.h>
 #include <sys/socket.h>
 #include <arpa/inet.h>
 #include "claves.h"
 #include "lines.h"
 
-typedef struct {
+typedef struct{
     int op; // Operación a realizar
     int key;
     char value1[256];
@@ -42,12 +43,12 @@ int make_conection(){
     char *IP_SERVER = getenv("IP_TUPLAS");
     if (IP_SERVER == NULL){
         printf("Variable IP_TUPLAS no definida\n");
-        return 0;
+        return -1;
     }
     char *PORT_SERVER = getenv("PORT_TUPLAS");
     if (PORT_SERVER == NULL){
         printf("Variable PORT_TUPLAS no definida\n");
-        return 0;
+        return -1;
     }
     short puerto = (short) atoi(PORT_SERVER);;
     int sd;
@@ -74,6 +75,7 @@ int make_conection(){
 
     int err = connect(sd, (struct sockaddr *) &server_addr,  sizeof(server_addr));
     if (err == -1) {
+        close(sd);
         printf("Error en connect\n");
         return -1;
     }
@@ -91,7 +93,7 @@ int enviar_peticion( int sc , peticion *pet){
     int key = htonl(pet->key);
     char value1[256];
 
-    strcpy_s(value1, 256, pet->value1);
+    strcpy(value1, pet->value1);
     int N_value2 = htonl(pet->N_value2);
     double V_value2[32];
     for ( int i = 0; i < N_value2; i++){
@@ -179,7 +181,7 @@ int recivir_respuesta(int sc , respuesta *resp){
         close(sc);
         return -1;
     }
-    resp->key = nhotl(key);
+    resp->key = ntohl(key);
 
     err = recvMessage(sc, (char *)&value1, sizeof(value1));  // envía el resultado
     if (err == -1) {
@@ -187,7 +189,7 @@ int recivir_respuesta(int sc , respuesta *resp){
         close(sc);
         return -1;
     }
-    strcpy_s(resp->value1,256, value1);
+    strcpy(resp->value1, value1);
 
     err = recvMessage(sc, (char *)&N_value2, sizeof(int));  // envía el resultado
     if (err == -1) {
@@ -195,7 +197,7 @@ int recivir_respuesta(int sc , respuesta *resp){
         close(sc);
         return -1;
     }
-    resp->N_value2 = nhotl(N_value2);
+    resp->N_value2 = ntohl(N_value2);
 
     for ( int i = 0; i < resp->N_value2 ; i++){
     err = recvMessage(sc, (char *)&V_value2, sizeof(double));  // envía el resultado
@@ -204,7 +206,7 @@ int recivir_respuesta(int sc , respuesta *resp){
         close(sc);
         return -1;
     }
-    resp->V_value2[i] = nhotl(V_value2);
+    resp->V_value2[i] = ntohl(V_value2);
     }
 
 
@@ -214,7 +216,7 @@ int recivir_respuesta(int sc , respuesta *resp){
         close(sc);
         return -1;
     }
-    resp->value3.x = nhotl(value3);
+    resp->value3.x = ntohl(value3);
 
     err = recvMessage(sc, (char *)&value3, sizeof(int));  // envía el resultado
     if (err == -1) {
@@ -222,7 +224,7 @@ int recivir_respuesta(int sc , respuesta *resp){
         close(sc);
         return -1;
         }
-    resp->value3.y = nhotl(value3);
+    resp->value3.y = ntohl(value3);
 
 
     err = recvMessage(sc, (char *)&status, sizeof(int));  // envía el resultado
@@ -231,30 +233,33 @@ int recivir_respuesta(int sc , respuesta *resp){
         close(sc);
         return -1;
     }
-    resp->status = nhtol(status);
+    resp->status = ntohl(status);
 
+    return 1;
 
 }
 
 int destroy() {
     printf("Mensaje del proxy: Enviando una petición destroy\n");
     peticion peticion;
-    respuesta respuesta;
-    char qr_name[1024];
+     respuesta respuesta;
 
     int sc = make_conection();
-
+    if (sc  == -1){
+        return -1;
+    };
+    printf("as");
     peticion.op = OP_DESTROY;
-
-    if (enviar_peticion(sc , &peticion)){
+    printf("asdfasdf");
+    if (enviar_peticion(sc , &peticion) == -1){
         close(sc);
         exit(-1);
     }
-    if ( recivir_respuesta(sc, &respuesta)){
+    if ( recivir_respuesta(sc, &respuesta) == -1 ){
         close(sc);
         exit(-1);
     }
-
+    printf("respueta: %d\n", respuesta.status);
     close(sc);
 
     return respuesta.status;
@@ -264,7 +269,7 @@ int set_value(int key, char *value1, int N_value2, double *V_value2, struct Coor
     printf("Mensaje del proxy: Enviando una petición set_value\n");
     peticion peticion;
     respuesta respuesta;
-    char qr_name[1024];
+
 
     peticion.op = OP_SET;
     peticion.key = key;

@@ -1,16 +1,20 @@
 #!/bin/bash
 
+gcc -c lines lines.c
+
 # Compilar la biblioteca dinámica
 echo "Compilando la biblioteca dinámica..."
-gcc -shared -o libclaves.so -fPIC proxy-mq.c -lrt
+gcc -shared -o libclaves.so -fPIC proxy-sock.c lines.o -lrt
 if [ $? -ne 0 ]; then
     echo "Error al compilar libclaves.so"
     exit 1
 fi
 
+
+gcc -c servidor servidor-sock.c
 echo "Compilando el servidor..."
 # Compilar el servidor
-gcc -o servidor-mq servidor-mq.c
+gcc -o servidor-sock servidor-sock.o lines.o claves.o
 if [ $? -ne 0 ]; then
     echo "Error al compilar servidor-mq"
     exit 1
