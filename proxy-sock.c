@@ -12,23 +12,23 @@
 #include "claves.h"
 #include "lines.h"
 
-typedef struct{
+struct peticion{
     int op; // Operación a realizar
     int key;
     char value1[256];
     int N_value2;
     double V_value2[32];
     struct Coord value3;
-} peticion;
+};
 
-typedef struct {
+struct respuesta{
     int key;
     char value1[256];
     int N_value2;
     double V_value2[32];
     struct Coord value3;
     int status; // Éxito o fracaso
-} respuesta;
+};
 
 typedef enum {
     OP_DESTROY = 0,
@@ -40,39 +40,48 @@ typedef enum {
 } Operacion;
 
 int make_conection(){
+    printf("-1");
     char *IP_SERVER = getenv("IP_TUPLAS");
     if (IP_SERVER == NULL){
         printf("Variable IP_TUPLAS no definida\n");
         return -1;
     }
+    printf("-2");
     char *PORT_SERVER = getenv("PORT_TUPLAS");
     if (PORT_SERVER == NULL){
         printf("Variable PORT_TUPLAS no definida\n");
         return -1;
     }
-    short puerto = (short) atoi(PORT_SERVER);;
+    printf("1");
+    short puerto = (short) atoi(PORT_SERVER);
     int sd;
     struct sockaddr_in server_addr;
     struct hostent *hp;
-
+    printf("2");
     sd = socket(AF_INET, SOCK_STREAM, 0);
+    printf("3");
     if (sd == 1) {
         printf("Error en socket\n");
+        close(sd);
         return -1;
     }
 
-
+    printf("4");
     bzero((char *)&server_addr, sizeof(server_addr));
     hp = gethostbyname(IP_SERVER);
+    printf("5");
     if (hp == NULL) {
+        close(sd);
         printf("Error en gethostbyname\n");
         return -1;
     }
 
+    printf("6");
     memcpy (&(server_addr.sin_addr), hp->h_addr, hp->h_length);
     server_addr.sin_family  = AF_INET;
     server_addr.sin_port    = htons(puerto);
 
+    printf("7");
     int err = connect(sd, (struct sockaddr *) &server_addr,  sizeof(server_addr));
     if (err == -1) {
         close(sd);
@@ -84,7 +93,7 @@ int make_conection(){
 }
 
 
-int enviar_peticion( int sc , peticion *pet){
+int enviar_peticion( int sc , struct peticion *pet){
     if (sc == 0 ){
         printf("Error in connection");
     }
@@ -167,7 +176,7 @@ int enviar_peticion( int sc , peticion *pet){
 }
 
 
-int recivir_respuesta(int sc , respuesta *resp){
+int recivir_respuesta(int sc ,struct respuesta *resp){
     int key;
     char value1[256];
     int N_value2;
@@ -234,23 +243,22 @@ int recivir_respuesta(int sc , respuesta *resp){
         return -1;
     }
     resp->status = ntohl(status);
-
+    close(sc);
     return 1;
 
 }
 
 int destroy() {
     printf("Mensaje del proxy: Enviando una petición destroy\n");
-    peticion peticion;
-     respuesta respuesta;
-
     int sc = make_conection();
-    if (sc  == -1){
+    struct peticion peticion ;
+    struct respuesta respuesta;
+
+
+    if (sc == -1){
         return -1;
-    };
-    printf("as");
+    }
     peticion.op = OP_DESTROY;
-    printf("asdfasdf");
     if (enviar_peticion(sc , &peticion) == -1){
         close(sc);
         exit(-1);
@@ -260,16 +268,15 @@ int destroy() {
         exit(-1);
     }
     printf("respueta: %d\n", respuesta.status);
-    close(sc);
 
     return respuesta.status;
 }
 
 int set_value(int key, char *value1, int N_value2, double *V_value2, struct Coord value3) {
     printf("Mensaje del proxy: Enviando una petición set_value\n");
-    peticion peticion;
-    respuesta respuesta;
-
+    struct peticion peticion;
+    struct respuesta respuesta;
+    printf("hola\n");
 
     peticion.op = OP_SET;
     peticion.key = key;
@@ -289,14 +296,17 @@ int set_value(int key, char *value1, int N_value2, double *V_value2, struct Coor
 
 int get_value(int key, char *value1, int *N_value2, double *V_value2, struct Coord *value3) {
     printf("Mensaje del proxy: Enviando una petición get_value\n");
-    peticion peticion;
-    respuesta respuesta;
+    struct peticion peticion;
+    struct respuesta respuesta;
     char qr_name[1024];
 
     peticion.op = OP_GET;
     peticion.key = key;
 
     int sc = make_conection();
+    if (sc == -1){
+        return -1;
+    }
     enviar_peticion(sc , &peticion);
     recivir_respuesta(sc, &respuesta);
 
@@ -314,8 +324,8 @@ int get_value(int key, char *value1, int *N_value2, double *V_value2, struct Coo
 
 int modify_value(int key, char *value1, int N_value2, double *V_value2, struct Coord value3) {
     printf("Mensaje del proxy: Enviando una petición modify_value\n");
-    peticion peticion;
-    respuesta respuesta;
+    struct peticion peticion;
+    struct respuesta respuesta;
 
 
 
@@ -338,8 +348,8 @@ int modify_value(int key, char *value1, int N_value2, double *V_value2, struct C
 
 int delete_key(int key) {
     printf("Mensaje del proxy: Enviando una petición delete_key\n");
-    peticion peticion;
-    respuesta respuesta;
+    struct peticion peticion;
+    struct respuesta respuesta;
 
 
 
@@ -358,8 +368,8 @@ int delete_key(int key) {
 
 int exist(int key) {
     printf("Mensaje del proxy: Enviando una petición exist\n");
-    peticion peticion;
-    respuesta respuesta;
+    struct peticion peticion;
+    struct respuesta respuesta;
 
 
     peticion.op = OP_EXIST;

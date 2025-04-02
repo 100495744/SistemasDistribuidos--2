@@ -1,6 +1,7 @@
 #!/bin/bash
 
-gcc -c lines lines.c
+gcc -c lines.c
+gcc -c claves.c
 
 # Compilar la biblioteca dinámica
 echo "Compilando la biblioteca dinámica..."
@@ -11,7 +12,7 @@ if [ $? -ne 0 ]; then
 fi
 
 
-gcc -c servidor servidor-sock.c
+gcc -c servidor-sock.c
 echo "Compilando el servidor..."
 # Compilar el servidor
 gcc -o servidor-sock servidor-sock.o lines.o claves.o

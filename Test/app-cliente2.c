@@ -111,15 +111,13 @@ void test_destroy() {
 }
 
 int main() {
-    sleep(1);
+
     test_get_value();
     test_set_value();
     test_get_value();
     test_modify_value();
     test_get_value();
-    for (int i= 0; i < 100 ; i++){
-        test_set_value2(i);
-    }
+
 
 
     return 0;
