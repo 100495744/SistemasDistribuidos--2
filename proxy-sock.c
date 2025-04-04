@@ -16,7 +16,7 @@
 int op; // Operación a realizar
 int key = 0;
 char *value1[256] ;
-int N_value2 = 0;
+int N_value2 = 1;
 double V_value2[32];
 struct Coord value3 = (struct Coord) {0,0};
 
@@ -133,7 +133,7 @@ int enviar_peticion( int sc ){
     }
 
 
-    err = sendMessage ( sc, (char *) value1_l, sizeof(value1));   // recibe la operació
+    err = sendMessage ( sc, (char *) value1_l, sizeof(char[256]));   // recibe la operació
     if (err == -1) {
         printf("Error en recepcion de value2\n");
         close(sc);
@@ -212,7 +212,7 @@ int recivir_respuesta(int sc ){
     }
     key = ntohl(key_l);
 
-    err = recvMessage(sc, value1_l, sizeof(value1_l));  // envía el resultado
+    err = recvMessage(sc, value1_l, sizeof(char[256]));  // envía el resultado
     if (err == -1) {
         printf("Error en envio3\n");
         close(sc);
@@ -299,7 +299,7 @@ int set_value(int key_i, char *value1_i, int N_value2_i, double *V_value2_i, str
     recivir_respuesta( sc);
 
     close(sc);
-
+    printf("respueta: %d\n", status);
     return status;
 }
 
@@ -308,12 +308,8 @@ int get_value(int key_i, char *value1_i, int *N_value2_i, double *V_value2_i, st
 
 
 
-    op = OP_SET;
+    op = OP_GET;
     key = key_i;
-    strcpy(value1, value1_i);
-    N_value2 = N_value2_i;
-    memcpy(V_value2, V_value2_i, sizeof(double) * N_value2);
-    value3 = *value3_i;
 
     int sc = make_conection();
     if (sc == -1){

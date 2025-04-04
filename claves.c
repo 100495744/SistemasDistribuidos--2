@@ -49,7 +49,8 @@ int set_value(int key, char *value1, int N_value2, double *V_value2, struct Coor
     char filepath[256]; //number??
     // Hacer error checking de si hay tantos valores en el vector como se indica en N_value2? Mejor en la parte de cliente?
 
-    if (Dir == NULL || N_value2 > 32 || N_value2 < 1 || V_value2 == NULL || value1 == NULL || ((value1 != NULL) && (strlen(value1) > 255))){
+    if (Dir == NULL || N_value2 > 32 || N_value2 < 1 || V_value2 == NULL || value1 == NULL || ((value1 != NULL) && (strlen(value1) > 256))){
+
         return -1;
     }
 
@@ -58,8 +59,7 @@ int set_value(int key, char *value1, int N_value2, double *V_value2, struct Coor
         return -1;
     }
     
-    sprintf(numstr,"%d",key);
-    strcat(numstr, ".txt");
+    sprintf(numstr,"%d.txt",key);
     sprintf(filepath, "%s/%s", DirName, numstr);
     FILE  *newfile = fopen(filepath, "w");
 
@@ -83,7 +83,7 @@ int set_value(int key, char *value1, int N_value2, double *V_value2, struct Coor
 }
 
 int get_value(int key, char *value1, int *N_value2, double *V_value2, struct Coord *value3){
-    char filename[20];
+    char filename[40];
     snprintf(filename, sizeof(filename), "DataBase/%d.txt", key);
 
     FILE *file = fopen(filename, "r");
@@ -166,6 +166,7 @@ int exist(int key){
     if (Dir != NULL){
         while((dir = readdir(Dir)) != NULL){
             if (strcmp(dir->d_name,numstr) == 0){
+                closedir(Dir);
                 return 1;
             }
         }

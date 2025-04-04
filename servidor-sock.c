@@ -87,7 +87,7 @@ int coger_datos_peticion(int sc, peticion *pet ){
     }
     pet->key = ntohl(pet->key);
 
-    err = recvMessage ( sc, (char *) &pet->value1, sizeof(pet->value1));   // recibe la operació
+    err = recvMessage ( sc, (char *) &pet->value1, sizeof(char[256]));   // recibe la operació
     if (err == -1) {
         printf("Error en recepcion de value\n");
         close(sc);
@@ -101,7 +101,9 @@ int coger_datos_peticion(int sc, peticion *pet ){
         close(sc);
         return -1;
     }
+
     pet->N_value2 = ntohl(pet->N_value2);
+
 
     for ( int i = 0; i < pet->N_value2 ; i++){
         err = recvMessage ( sc, (char *)&pet->V_value2[i], sizeof(double));   // recibe la operació
@@ -120,6 +122,7 @@ int coger_datos_peticion(int sc, peticion *pet ){
         close(sc);
         return -1;
     }
+
     pet->value3.x = ntohl(pet->value3.x);
 
     err = recvMessage ( sc, (char *) &pet->value3.y, sizeof(int));   // recibe la operació
@@ -138,9 +141,10 @@ int mandar_respuesta(respuesta *res ,int sc ){
     int key = htonl(res->key);
     int N_value2= htonl(res->N_value2);
     double V_value2[32];
-    for (int i = 0; i < N_value2; i++) {
+    for (int i = 0; i < res->N_value2; i++) {
         V_value2[i] = htonl(res->V_value2[i]);
     }
+
     int value3x = htonl(res->value3.x);
     int value3y = htonl(res->value3.y);
     int status = htonl(res->status);
@@ -168,7 +172,7 @@ int mandar_respuesta(respuesta *res ,int sc ){
         return -1;
     }
 
-    err = sendMessage(sc, res->value1, sizeof(res->value1));  // envía el resultado
+    err = sendMessage(sc, res->value1, sizeof(char[256]));  // envía el resultado
     if (err == -1) {
         printf("Error en envio\n");
         close(sc);
@@ -250,11 +254,11 @@ void tratar_peticion(int  *soquet_cliente){
             pthread_mutex_unlock(&mutex);
             if (existe == 1){
                 printf("La clave existe\n");
-                espuesta.status = 1;
+                respuesta.status = 1;
             }
             else if (existe == 0){
                 printf("La clave no existe\n");
-                espuesta.status = 0;
+                respuesta.status = 0;
             }
             else{
                 printf("Error al comprobar la existencia de la clave\n");
@@ -264,7 +268,7 @@ void tratar_peticion(int  *soquet_cliente){
             break;
 
         case OP_GET:
-            printf("He recibido una petición de get\n");
+            printf("He recibido una petición de get con key: %d\n", pet.key);
             pthread_mutex_lock(&mutex);
             respuesta.status = get_value(pet.key, respuesta.value1, &respuesta.N_value2, respuesta.V_value2, &respuesta.value3);
             pthread_mutex_unlock(&mutex);
@@ -275,6 +279,7 @@ void tratar_peticion(int  *soquet_cliente){
             else{
                 printf("Error al obtener el valor\n");
             }
+
             break;
 
         case OP_SET:

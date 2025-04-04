@@ -89,6 +89,7 @@ void test_destroy() {
 }
 
 int main() {
+
     test_destroy();
     //set malo
     test_set_value();
