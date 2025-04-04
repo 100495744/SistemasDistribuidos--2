@@ -15,10 +15,21 @@ int destroy(){
     Dir = opendir(DirName);
 
     if ( Dir != NULL){
-       system("rm -r DataBase ");
+       if (system("rm -r DataBase ") == -1){
+            printf("Error al eliminar el directorio\n");
+            closedir(Dir);
+            return -1;
+        }
+    } else{
+        printf("Error al abrir el directorio\n");
+        return -1;
     }
 
-    mkdir(DirName,S_IRWXU | S_IRWXG | S_IROTH | S_IXOTH);
+    if (mkdir(DirName,S_IRWXU | S_IRWXG | S_IROTH | S_IXOTH) == -1){
+        printf("Error al crear el directorio\n");
+        return -1;
+    }
+
     return 0;
 
 }
@@ -38,7 +49,7 @@ int set_value(int key, char *value1, int N_value2, double *V_value2, struct Coor
     char filepath[256]; //number??
     // Hacer error checking de si hay tantos valores en el vector como se indica en N_value2? Mejor en la parte de cliente?
 
-    if (Dir == NULL || N_value2 > 32 || N_value2 < 1 || V_value2 == NULL || value1 == NULL){
+    if (Dir == NULL || N_value2 > 32 || N_value2 < 1 || V_value2 == NULL || value1 == NULL || ((value1 != NULL) && (strlen(value1) > 255))){
         return -1;
     }
 
@@ -113,7 +124,14 @@ int get_value(int key, char *value1, int *N_value2, double *V_value2, struct Coo
 }
 
 int modify_value(int key, char *value1, int N_value2, double *V_value2, struct Coord value3){
-    delete_key(key);
+    if (exist(key) == 0){
+        printf("No existe la clave que se está intentando modificar\n");
+        return -1;
+    }
+    if (delete_key(key) == -1){
+        printf("Error al modificar la clave\n");
+        return -1;
+    }
     if (set_value(key, value1, N_value2, V_value2, value3) == -1){
         printf("Error al modificar la clave\n");
         return -1;
@@ -128,14 +146,16 @@ int delete_key(int key){
     }
     char filename[20];
     snprintf(filename, sizeof(filename), "DataBase/%d.txt", key);
-    remove(filename);
+    if (remove(filename) != 0) {
+        perror("Error al eliminar el archivo");
+        return -1;
+    }
     return 0;
 }
 
 int exist(int key){
     DIR *Dir;
     struct dirent *dir;
-    //Esto hay que revisarlo. Está bien que 15 sea fijo?
     char numstr[15];
 
     Dir = opendir(DirName);
@@ -150,9 +170,7 @@ int exist(int key){
             }
         }
     }
+    closedir(Dir);
     //Si no existe el directorio, tampoco la clave
     return 0;
 }
-
-
-
